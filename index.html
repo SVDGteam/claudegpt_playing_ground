@@ -90,8 +90,7 @@ async function processOne(i){
           model:'gpt-4.1',
           tools:[{type:'web_search_preview'}],
           input:[{role:'system',content:SYSTEM_PROMPT},{role:'user',content:prompt}],
-          max_output_tokens:1200,
-          text:{format:{type:'json_object'}}
+          max_output_tokens:1200
         })
       });
       if(!res.ok){
@@ -101,7 +100,9 @@ async function processOne(i){
         throw new Error(`HTTP ${res.status}${details ? `: ${details}` : ''}`);
       }
       const data=await res.json();
-      const parsed=JSON.parse(((data.output_text||'').match(/\{[\s\S]*\}/)||['{}'])[0]);
+      const raw=(data.output_text||'').trim();
+      const jsonChunk=(raw.match(/\{[\s\S]*\}/)||['{}'])[0];
+      const parsed=JSON.parse(jsonChunk);
       r.locations=parsed.locations||[]; r.sources=parsed.sources||[]; r.notes=parsed.notes||''; r.confidence=parsed.confidence||'medium';
       r.status=r.locations.length?(r.confidence==='low'?'partial':'done'):'partial';
       log(`ok ${r.name}: ${r.locations.length} location(s)`);
