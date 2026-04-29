@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Office Location Finder</title>
+  <style>
+    body { font-family: Arial, sans-serif; background:#0d0f12; color:#e8edf5; margin:0; padding:20px; }
+    .bar, .panel { background:#151820; border:1px solid #2a3040; border-radius:8px; padding:12px; margin-bottom:12px; }
+    button { margin-right:8px; padding:8px 12px; }
+    input { padding:8px; width:360px; max-width:100%; }
+    table { width:100%; border-collapse:collapse; font-size:14px; }
+    th, td { border-bottom:1px solid #2a3040; padding:8px; text-align:left; vertical-align:top; }
+    .muted { color:#8a96ad; }
+    .tag { display:inline-block; margin:2px 4px 2px 0; padding:2px 6px; background:#1c2030; border:1px solid #2a3040; border-radius:4px; }
+  </style>
+</head>
+<body>
+  <h2>Office Location Finder (GPT + Web Search)</h2>
+
+  <div class="panel">
+    <strong>API Key Setup</strong><br />
+    <input id="apiKey" type="password" placeholder="sk-..." />
+    <button id="saveKey">Save Key</button>
+    <button id="clearKey">Clear Key</button>
+    <div class="muted" id="keyStatus"></div>
+  </div>
+
+  <div class="bar">
+    <button id="run">Run All Pending</button>
+    <button id="resume">Resume Failed</button>
+    <button id="reset">Reset</button>
+    <button id="csv" disabled>Export CSV</button>
+    <button id="json" disabled>Export JSON</button>
+    <span class="muted" id="summary"></span>
+  </div>
+
+  <div class="panel" style="max-height:220px; overflow:auto;"><div id="log" class="muted"></div></div>
+
+  <div class="panel" style="overflow:auto; max-height:60vh;">
+    <table>
+      <thead><tr><th>Company</th><th>Website</th><th>Locations</th><th>Status</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+
+<script>
+const STORAGE_KEY='office-location-finder-v3';
+const OPENAI_KEY_STORAGE='openai_api_key';
+const BASE_DELAY_MS=2500, MAX_RETRIES=5;
+const SYSTEM_PROMPT='Return only JSON: {locations: string[], confidence: "high|medium|low", sources: string[], notes: string}. Use web search and avoid fabrication.';
+const COMPANIES=[["Anduril","www.anduril.com"],["Saronic Technologies","www.saronic.com"],["Scale AI","www.scale.com"],["Shield AI","www.shield.ai"],["Databricks","www.databricks.com"],["Axiom Space","www.axiomspace.com"],["Sierra Space","www.sierraspace.com"],["Forterra","www.forterra.com"],["Castelion","www.castelion.com"],["PsiQuantum","www.psiquantum.com"],["OpenAI","www.openai.com"],["Onebrief","www.onebrief.com"],["Dataminr","www.dataminr.com"],["Hadrian","www.hadrian.co"],["CesiumAstro","www.cesiumastro.com"],["Skydio","www.skydio.com"],["Impulse Space","www.impulsespace.com"],["Stoke Space","www.stokespace.com"],["Govini","www.govini.com"],["Lambda","www.lambdalabs.com"],["Varda Space Industries","www.varda.com"],["JetZero","www.jetzero.aero"],["Applied Intuition","www.appliedintuition.com"],["APEX","www.apexspace.com"],["Blue Origin","www.blueorigin.com"],["Chainalysis","www.chainalysis.com"],["X-Bow","www.xbowsystems.com"],["Hermeus","www.hermeus.com"],["Epirus","www.epirusinc.com"],["Forcepoint","www.forcepoint.com"],["True Anomaly","www.trueanomaly.space"],["CHAOS","www.chaosinc.com"],["Relativity Space","www.relativityspace.com"],["Oura","www.ouraring.com"],["Zipline","www.zipline.com"],["Lyten","www.lyten.com"],["General Matter","www.generalmatter.com"],["Vulcan Elements","www.vulcanelements.com"],["Whoop","www.whoop.com"],["Defense Unicorns","www.defenseunicorns.com"],["K2 Space","www.k2space.com"],["Iceye","www.iceye.com"],["Ursa Major","www.ursamajor.com"],["Xona Space Systems","www.xonaspace.com"],["Tomorrow.io","www.tomorrow.io"],["Picogrid","www.picogrid.com"],["BetterUp","www.betterup.com"],["SimSpace","www.simspace.com"],["Divergent","www.divergent3d.com"],["Boom Supersonic","www.boomsupersonic.com"],["Turion Space","www.turionspace.com"],["Code Metal","www.codemetal.ai"],["Slingshot Aerospace","www.slingshot.space"],["Saildrone","www.saildrone.com"],["Shift5","www.shift5.io"],["Electra.aero","www.electra.aero"],["Re:Build Manufacturing","www.rebuildmanufacturing.com"],["Nominal","www.nominal.io"],["TRM Labs","www.trmlabs.com"],["Starfish Space","www.starfishspace.com"],["Grafana Labs","www.grafana.com"],["Umbra","www.umbra.space"],["Altana Technologies","www.altana.ai"],["Chainguard","www.chainguard.dev"],["Anaconda","www.anaconda.com"],["Radiant","www.radiantnuclear.com"],["Machina Labs","www.machinalabs.ai"],["Astranis","www.astranis.com"],["Vast Space","www.vastspace.com"],["Loft Orbital","www.loftorbital.com"],["Vannevar Labs","www.vannevarlabs.com"],["NODA AI","www.nodaintelligence.ai"],["Quindar","www.quindar.space"],["Firestorm","www.launchfirestorm.com"],["Compound Eye","www.compoundeye.com"],["Aalyria","www.aalyria.com"],["Hypori","www.hypori.com"],["Ayar Labs","www.ayarlabs.com"],["Atom Computing","www.atom-computing.com"],["Reliable Robotics","www.reliable.co"],["LeoLabs","www.leolabs.space"],["Virtualitics","www.virtualitics.com"],["Zeno Power","www.zenopower.com"],["Raft","www.teamraft.com"],["Overland AI","www.overland.ai"],["ThinkOrbital","www.thinkorbital.com"],["Cape","www.cape.co"],["Ditto","www.ditto.com"],["Antares","www.antaresindustries.com"],["Agility Robotics","www.agilityrobotics.com"],["Viken Detection","www.vikendetection.com"],["RED 6","www.red6ar.com"],["DataRobot","www.datarobot.com"],["Lunar Outpost","www.lunaroutpost.com"],["Flock Safety","www.flocksafety.com"],["DeepNight","www.deepnight.ai"],["Strider Technologies","www.striderintel.com"],["Integrate","www.integrate.co"],["Havoc AI","www.havocai.com"],["Noveon","www.noveon.co"]];
+
+let results={}, running=false, abort=false;
+const $=id=>document.getElementById(id);
+function log(m){$('log').innerHTML += `<div>[${new Date().toLocaleTimeString()}] ${m}</div>`; $('log').scrollTop=$('log').scrollHeight;}
+function sleep(ms){return new Promise(r=>setTimeout(r,ms));}
+function save(){localStorage.setItem(STORAGE_KEY, JSON.stringify(results));}
+function load(){try{return JSON.parse(localStorage.getItem(STORAGE_KEY)||'{}')}catch{return {}}}
+function key(){return localStorage.getItem(OPENAI_KEY_STORAGE)||'';}
+function setKeyStatus(){ $('keyStatus').textContent = key() ? 'Key saved in localStorage.' : 'No API key saved yet.'; }
+
+function paint() {
+  const tbody=$('rows'); tbody.innerHTML='';
+  let done=0,partial=0,error=0,pending=0,locs=0;
+  COMPANIES.forEach(([name,site],i)=>{
+    const r=results[i]||{name,site,status:'pending',locations:[],notes:'',sources:[],confidence:''};
+    if(r.status==='done')done++; else if(r.status==='partial')partial++; else if(r.status==='error')error++; else pending++;
+    locs+=(r.locations||[]).length;
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td>${name}</td><td class='muted'>${site}</td><td>${(r.locations||[]).map(x=>`<span class='tag'>${x}</span>`).join('')||'<span class="muted">—</span>'}${r.notes?`<div class='muted'>${r.notes}</div>`:''}</td><td>${r.status}</td>`;
+    tbody.appendChild(tr);
+  });
+  $('summary').textContent=`done ${done} · partial ${partial} · failed ${error} · pending ${pending} · locations ${locs}`;
+  $('csv').disabled = done+partial+error===0;
+  $('json').disabled = done+partial+error===0;
+  $('resume').disabled = error===0;
+  save();
+}
+
+async function processOne(i){
+  const r=results[i]; r.status='running'; paint();
+  const prompt=`Company: ${r.name}\nWebsite: ${r.site}\nFind office locations.`;
+  for(let attempt=0; attempt<=MAX_RETRIES; attempt++){
+    try {
+      const res=await fetch('https://api.openai.com/v1/responses',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','Authorization':`Bearer ${key()}`},
+        body:JSON.stringify({
+          model:'gpt-5',
+          tools:[{type:'web_search_preview'}],
+          input:[{role:'system',content:SYSTEM_PROMPT},{role:'user',content:prompt}],
+          max_output_tokens:1200,
+          text:{format:{type:'json_object'}}
+        })
+      });
+      if(!res.ok){
+        if([429,529].includes(res.status)){const wait=Math.min(120000,BASE_DELAY_MS*(2**attempt));log(`rate limit ${r.name}; retry in ${Math.round(wait/1000)}s`);await sleep(wait);continue;}
+        throw new Error(`HTTP ${res.status}`);
+      }
+      const data=await res.json();
+      const parsed=JSON.parse(((data.output_text||'').match(/\{[\s\S]*\}/)||['{}'])[0]);
+      r.locations=parsed.locations||[]; r.sources=parsed.sources||[]; r.notes=parsed.notes||''; r.confidence=parsed.confidence||'medium';
+      r.status=r.locations.length?(r.confidence==='low'?'partial':'done'):'partial';
+      log(`ok ${r.name}: ${r.locations.length} location(s)`);
+      paint();
+      return;
+    } catch(err) {
+      if(attempt===MAX_RETRIES){r.status='error';r.notes=String(err.message||err);log(`error ${r.name}: ${r.notes}`);paint();return;}
+      await sleep(BASE_DELAY_MS*(2**attempt));
+    }
+  }
+}
+
+async function run(indices){
+  if(running) return;
+  if(!key()) { alert('Please save an OpenAI API key first.'); return; }
+  running=true; abort=false;
+  for(const i of indices){ if(abort) break; await processOne(i); await sleep(1200); }
+  running=false;
+}
+
+function init(){
+  const persisted=load();
+  COMPANIES.forEach(([name,site],i)=>{results[i]=persisted[i]||{name,site,locations:[],status:'pending',notes:'',sources:[],confidence:''}; results[i].name=name; results[i].site=site;});
+  $('apiKey').value=key();
+  setKeyStatus();
+  paint();
+}
+
+$('saveKey').onclick=()=>{ localStorage.setItem(OPENAI_KEY_STORAGE, $('apiKey').value.trim()); setKeyStatus(); };
+$('clearKey').onclick=()=>{ localStorage.removeItem(OPENAI_KEY_STORAGE); $('apiKey').value=''; setKeyStatus(); };
+$('run').onclick=()=>run(COMPANIES.map((_,i)=>i).filter(i=>results[i].status==='pending'));
+$('resume').onclick=()=>run(COMPANIES.map((_,i)=>i).filter(i=>results[i].status==='error'));
+$('reset').onclick=()=>{ if(running){abort=true;return;} localStorage.removeItem(STORAGE_KEY); init(); log('state reset'); };
+$('csv').onclick=()=>{
+  const rows=[['Company','Website','Locations','Confidence','Sources','Notes','Status']];
+  COMPANIES.forEach((_,i)=>{const r=results[i]; rows.push([r.name,r.site,(r.locations||[]).join(' | '),r.confidence||'',(r.sources||[]).join(' | '),r.notes||'',r.status]);});
+  const csv=rows.map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'})); a.download='office_locations.csv'; a.click();
+};
+$('json').onclick=()=>{ const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([JSON.stringify(COMPANIES.map((_,i)=>results[i]),null,2)],{type:'application/json'})); a.download='office_locations.json'; a.click(); };
+
+init();
+</script>
+</body>
+</html>
